@@ -6,7 +6,8 @@ on:
       - "v*"
 
 jobs:
-  build-mobile:
+  build-ios-unsigned:
+    # 构建 IPA 必须使用 macOS 环境
     runs-on: macos-latest
     permissions:
       contents: write
@@ -16,40 +17,27 @@ jobs:
         with:
           ref: master
 
-      # 2. 设置 JAVA 环境 (构建 Android 所需)
-      - uses: actions/setup-java@v4
-        with:
-          distribution: "zulu"
-          java-version: "17"
-          cache: "gradle"
-
-      # 3. 设置 Flutter 环境
+      # 2. 设置 Flutter 环境
       - name: Flutter action
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.38.x"
           cache: true
 
-      # 4. 更新 Packages
+      # 3. 更新 Flutter 依赖
       - name: Restore packages
         run: |
           cd simple_live_app
           flutter pub get
 
-      # 5. 构建未签名 APK 
-      # 不配置 key.properties，Flutter 默认生成未签名（或仅包含调试签名）的 Release APK
-      - name: Build Unsigned APK
-        run: |
-          cd simple_live_app
-          flutter build apk --release --split-per-abi
-
-      # 6. 构建未签名 iOS 产物 (Frameworks)
-      - name: Build iOS
+      # 4. 构建 iOS 产物 (不签名)
+      - name: Build iOS Frameworks
         run: |
           cd simple_live_app
           flutter build ios --release --no-codesign
 
-      # 7. 封装未签名 IPA
+      # 5. 封装为未签名 IPA
+      # 模拟导出过程：创建 Payload 文件夹并压缩
       - name: Create Unsigned IPA
         run: |
           cd simple_live_app
@@ -59,24 +47,22 @@ jobs:
           zip -q -r ios_no_sign.ipa Payload
           cd ../../..
 
-      # 8. 获取版本信息
+      # 6. 获取版本信息
       - name: Get version from tag
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      # 9. 上传至 Release
+      # 7. 上传 IPA 至 GitHub Release
       - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
           name: "${{ steps.version.outputs.VERSION }}"
           generate_release_notes: true
+          # 如果标签包含 beta 或 alpha，则标记为预发布
           prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
           token: ${{ secrets.TOKEN }}
           files: |
-            simple_live_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-            simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-            simple_live_app/build/app/outputs/flutter-apk/app-x86_64-release.apk
             simple_live_app/build/ios/iphoneos/ios_no_sign.ipa
 
       # 完成提示
-      - run: echo "🍏 Mobile build job status is ${{ job.status }}."
+      - run: echo "🍏 iOS Unsigned IPA build status is ${{ job.status }}."
